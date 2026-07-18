@@ -1,0 +1,1219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CLAUDE.md Doctor — lint & generate CLAUDE.md / AGENTS.md</title>
+<meta name="description" content="Lint your CLAUDE.md / AGENTS.md for bloat, vagueness, and secrets, or generate a lean, high-scoring one from a short form. 100% client-side, nothing ever leaves this tab.">
+<meta property="og:title" content="CLAUDE.md Doctor — lint & generate CLAUDE.md / AGENTS.md">
+<meta property="og:description" content="Lint your CLAUDE.md / AGENTS.md for bloat, vagueness, and secrets, or generate a lean, high-scoring one from a short form. 100% client-side, nothing ever leaves this tab.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="https://ddolboghi.github.io/claudemd-doctor/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:url" content="https://ddolboghi.github.io/claudemd-doctor/">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%A9%BA%3C/text%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#f7f7f5; --bg-elev:#ffffff; --bg-sunken:#eef0ef;
+  --ink:#16181a; --ink-dim:#5b6169; --border:#e1e3e1;
+  --accent:#3457d5; --accent-ink:#ffffff;
+  --err:#c4372f; --err-bg:#fdecec;
+  --warn:#9a6a00; --warn-bg:#fdf3df;
+  --info:#2b6f8f; --info-bg:#e7f3f8;
+  --ok:#1e8a5c; --ok-bg:#e7f7ef;
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --radius: 10px;
+  --shadow: 0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.05);
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#111315; --bg-elev:#191b1e; --bg-sunken:#0c0d0e;
+    --ink:#eef0f2; --ink-dim:#9aa1a9; --border:#2a2d30;
+    --accent:#7c9bff; --accent-ink:#0b0e14;
+    --err:#ff8a80; --err-bg:#3a1a17;
+    --warn:#ffcc66; --warn-bg:#3a2e0d;
+    --info:#8fd0f0; --info-bg:#0f2a35;
+    --ok:#7be0ac; --ok-bg:#0f2e21;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+  }
+}
+html[data-theme="light"]{
+  --bg:#f7f7f5; --bg-elev:#ffffff; --bg-sunken:#eef0ef; --ink:#16181a; --ink-dim:#5b6169; --border:#e1e3e1;
+  --accent:#3457d5; --accent-ink:#ffffff; --err:#c4372f; --err-bg:#fdecec; --warn:#9a6a00; --warn-bg:#fdf3df;
+  --info:#2b6f8f; --info-bg:#e7f3f8; --ok:#1e8a5c; --ok-bg:#e7f7ef;
+  --shadow: 0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.05);
+}
+html[data-theme="dark"]{
+  --bg:#111315; --bg-elev:#191b1e; --bg-sunken:#0c0d0e; --ink:#eef0f2; --ink-dim:#9aa1a9; --border:#2a2d30;
+  --accent:#7c9bff; --accent-ink:#0b0e14; --err:#ff8a80; --err-bg:#3a1a17; --warn:#ffcc66; --warn-bg:#3a2e0d;
+  --info:#8fd0f0; --info-bg:#0f2a35; --ok:#7be0ac; --ok-bg:#0f2e21;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--ink); font-family:var(--sans);
+  line-height:1.5; -webkit-font-smoothing:antialiased;
+}
+a{color:var(--accent)}
+.wrap{max-width:920px;margin:0 auto;padding:0 20px}
+header.top{border-bottom:1px solid var(--border);padding:22px 0 0;background:var(--bg)}
+.brand{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}
+.brand h1{font-size:19px;margin:0;display:flex;align-items:center;gap:8px;letter-spacing:-.01em}
+.brand .tag{color:var(--ink-dim);font-size:13px;margin-top:2px}
+.brand-left{display:flex;flex-direction:column}
+.privacy-pill{
+  font-size:12px;color:var(--ok);background:var(--ok-bg);border:1px solid var(--ok);
+  padding:4px 10px;border-radius:999px;white-space:nowrap;font-weight:600;
+}
+.theme-btn{
+  background:var(--bg-elev);border:1px solid var(--border);color:var(--ink);
+  border-radius:8px;padding:6px 10px;cursor:pointer;font-size:14px;line-height:1;
+}
+.tabs{display:flex;gap:4px}
+.tab-btn{
+  background:none;border:none;border-bottom:2px solid transparent;color:var(--ink-dim);
+  font:inherit;font-size:14.5px;font-weight:600;padding:10px 14px;cursor:pointer;
+}
+.tab-btn.active{color:var(--ink);border-bottom-color:var(--accent)}
+main{padding:28px 0 60px}
+.panel{display:none}
+.panel.active{display:block}
+.card{
+  background:var(--bg-elev);border:1px solid var(--border);border-radius:var(--radius);
+  padding:20px;margin-bottom:18px;box-shadow:var(--shadow);
+}
+label.field-label{display:block;font-size:13px;font-weight:600;margin-bottom:6px;color:var(--ink-dim)}
+textarea, input[type=text], select{
+  width:100%;background:var(--bg-sunken);color:var(--ink);border:1px solid var(--border);
+  border-radius:8px;padding:10px 12px;font-family:var(--mono);font-size:13px;resize:vertical;
+}
+textarea:focus, input:focus, select:focus{outline:2px solid var(--accent);outline-offset:1px}
+textarea.main-input{min-height:260px;font-family:var(--mono)}
+textarea.tree-input{min-height:100px}
+.row{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+.row2col{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.row3col{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+@media (max-width:640px){.row2col,.row3col{grid-template-columns:1fr}}
+button.btn{
+  font:inherit;font-size:13.5px;font-weight:600;padding:9px 16px;border-radius:8px;cursor:pointer;
+  border:1px solid var(--border);background:var(--bg-elev);color:var(--ink);
+}
+button.btn:hover{border-color:var(--accent)}
+button.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.btn.primary:hover{filter:brightness(1.06)}
+button.btn.ghost{background:none}
+button.btn.small{padding:5px 10px;font-size:12.5px}
+.hint{color:var(--ink-dim);font-size:12.5px;margin-top:6px}
+.field-group{margin-bottom:16px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{
+  border:1px solid var(--border);background:var(--bg-sunken);color:var(--ink-dim);
+  padding:6px 12px;border-radius:999px;font-size:13px;cursor:pointer;user-select:none;
+}
+.chip.selected{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+.checkline{display:flex;align-items:center;gap:8px;font-size:13.5px;margin:6px 0}
+.checkline input{width:auto}
+fieldset{border:1px solid var(--border);border-radius:8px;padding:14px;margin:0 0 16px}
+legend{font-size:12.5px;font-weight:700;color:var(--ink-dim);padding:0 6px}
+
+/* Score badge */
+.score-badge{
+  display:flex;align-items:center;gap:18px;padding:18px;border-radius:var(--radius);
+  background:var(--bg-sunken);border:1px solid var(--border);margin-bottom:16px;flex-wrap:wrap;
+}
+.grade-circle{
+  width:78px;height:78px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-size:28px;font-weight:800;flex:none;border:3px solid currentColor;
+}
+.grade-A{color:var(--ok)} .grade-B{color:var(--ok)} .grade-C{color:var(--warn)}
+.grade-D{color:var(--warn)} .grade-F{color:var(--err)}
+.score-meta{flex:1;min-width:200px}
+.score-meta .num{font-size:22px;font-weight:700}
+.score-meta .sub{color:var(--ink-dim);font-size:13px;margin-top:2px}
+.pill-counts{display:flex;gap:8px;flex-wrap:wrap}
+.pill{border-radius:999px;padding:3px 10px;font-size:12px;font-weight:700}
+.pill.err{background:var(--err-bg);color:var(--err)}
+.pill.warn{background:var(--warn-bg);color:var(--warn)}
+.pill.info{background:var(--info-bg);color:var(--info)}
+
+.category-block{margin-bottom:18px}
+.category-title{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-dim);font-weight:700;margin:0 0 8px}
+.finding{
+  border:1px solid var(--border);border-left-width:4px;border-radius:8px;padding:12px 14px;margin-bottom:10px;
+  background:var(--bg-elev);
+}
+.finding.sev-error{border-left-color:var(--err)}
+.finding.sev-warn{border-left-color:var(--warn)}
+.finding.sev-info{border-left-color:var(--info)}
+.finding-head{display:flex;align-items:center;gap:8px;font-weight:700;font-size:13.5px;margin-bottom:4px}
+.sev-tag{font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;padding:2px 7px;border-radius:5px;font-weight:800}
+.sev-tag.sev-error{background:var(--err-bg);color:var(--err)}
+.sev-tag.sev-warn{background:var(--warn-bg);color:var(--warn)}
+.sev-tag.sev-info{background:var(--info-bg);color:var(--info)}
+.finding p{margin:4px 0;font-size:13.5px;color:var(--ink)}
+.finding .fix{color:var(--ink-dim)}
+.finding .quote{
+  font-family:var(--mono);font-size:12px;background:var(--bg-sunken);border-radius:6px;padding:6px 8px;
+  margin:6px 0;white-space:pre-wrap;word-break:break-word;color:var(--ink-dim);
+}
+.finding .quote b{color:var(--ink);font-weight:600}
+.empty-state{color:var(--ink-dim);font-size:14px;padding:30px 10px;text-align:center}
+.empty-state .big{font-size:34px;margin-bottom:8px}
+
+/* CTA / monetization */
+.cta-card{
+  border:1px dashed var(--accent);background:var(--bg-sunken);border-radius:var(--radius);
+  padding:18px;margin-top:6px;
+}
+.cta-card h3{margin:0 0 6px;font-size:15px}
+.cta-card p{margin:4px 0;font-size:13.5px;color:var(--ink-dim)}
+.cta-links{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+.cta-links .btn-link{
+  display:inline-block;text-decoration:none;font-size:13px;font-weight:600;padding:8px 14px;
+  border-radius:8px;border:1px solid var(--border);color:var(--ink);background:var(--bg-elev);
+  font-family:inherit;cursor:pointer;
+}
+.cta-links .btn-link:hover{border-color:var(--accent)}
+.toss-modal{position:fixed;inset:0;z-index:10;display:grid;place-items:center;background:rgba(11,18,32,.45);padding:20px}
+.toss-modal[hidden]{display:none}.toss-dialog{width:min(360px,100%);background:var(--bg-elev);color:var(--ink);border-radius:10px;padding:20px;text-align:center;position:relative}
+.toss-dialog img{display:block;max-width:260px;width:100%;height:auto;margin:0 auto 14px}.toss-dialog p{font-size:13px;line-height:1.55}.toss-dialog .note{font-size:12px;color:var(--ink-dim)}
+.toss-close{position:absolute;top:8px;right:10px;border:0;background:none;color:var(--ink);font-size:22px;cursor:pointer}
+
+/* generator preview */
+.preview-pane{
+  background:var(--bg-sunken);border:1px solid var(--border);border-radius:8px;padding:14px;
+  font-family:var(--mono);font-size:12.5px;white-space:pre-wrap;word-break:break-word;
+  max-height:520px;overflow:auto;
+}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+@media (max-width:860px){.two-col{grid-template-columns:1fr}}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.token-note{font-size:12px;color:var(--ink-dim);margin-top:8px}
+footer{border-top:1px solid var(--border);padding:24px 0 40px;color:var(--ink-dim);font-size:12.5px}
+footer p{margin:4px 0}
+.notice{
+  background:var(--warn-bg);color:var(--warn);border:1px solid var(--warn);border-radius:8px;
+  padding:8px 12px;font-size:12.5px;margin-bottom:12px;
+}
+.section-title{font-size:15px;font-weight:700;margin:0 0 12px}
+.copy-ok{color:var(--ok)}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <div class="brand">
+      <div class="brand-left">
+        <h1>🩺 CLAUDE.md Doctor</h1>
+        <div class="tag">Lint &amp; generate CLAUDE.md / AGENTS.md files for AI coding agents</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="privacy-pill">100% client-side — your files never leave this tab</span>
+        <button class="theme-btn" id="themeToggle" title="Toggle theme" type="button">◐</button>
+      </div>
+    </div>
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="lint" type="button">Lint</button>
+      <button class="tab-btn" data-tab="generate" type="button">Generate</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- LINT PANEL -->
+  <section class="panel active" id="panel-lint">
+    <div class="card">
+      <label class="field-label" for="mainInput">Paste your CLAUDE.md / AGENTS.md</label>
+      <textarea id="mainInput" class="main-input" placeholder="# My Project&#10;You are an expert software engineer...&#10;&#10;Please make sure to write clean code and follow best practices..."></textarea>
+      <label class="field-label" style="margin-top:14px" for="treeInput">Repo file tree (optional, for cross-checking dead paths)</label>
+      <textarea id="treeInput" class="tree-input" placeholder="Paste output of `tree` or `git ls-files`, e.g.&#10;src/index.ts&#10;package.json&#10;README.md"></textarea>
+      <div class="row">
+        <button class="btn primary" id="diagnoseBtn" type="button">Diagnose</button>
+        <button class="btn" id="loadExampleBtn" type="button">Load example (bad)</button>
+        <button class="btn ghost" id="clearBtn" type="button">Clear</button>
+      </div>
+    </div>
+
+    <div id="resultsArea"></div>
+  </section>
+
+  <!-- GENERATE PANEL -->
+  <section class="panel" id="panel-generate">
+    <div class="two-col">
+      <div>
+        <div class="card">
+          <p class="section-title">1. Project</p>
+          <div class="field-group">
+            <label class="field-label" for="g-name">Project name</label>
+            <input type="text" id="g-name" placeholder="acme-api">
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="g-desc">One-line description</label>
+            <input type="text" id="g-desc" placeholder="Internal billing API for Acme Corp">
+          </div>
+        </div>
+
+        <div class="card">
+          <p class="section-title">2. Stack</p>
+          <div class="chips" id="stackChips">
+            <div class="chip" data-stack="ts">TypeScript/Node</div>
+            <div class="chip" data-stack="react">React/Next.js</div>
+            <div class="chip" data-stack="python">Python</div>
+            <div class="chip" data-stack="go">Go</div>
+            <div class="chip" data-stack="rust">Rust</div>
+            <div class="chip" data-stack="java">Java/Spring</div>
+            <div class="chip" data-stack="rails">Ruby/Rails</div>
+            <div class="chip" data-stack="php">PHP/Laravel</div>
+            <div class="chip" data-stack="dotnet">C#/.NET</div>
+            <div class="chip" data-stack="flutter">Flutter</div>
+            <div class="chip" data-stack="rn">React Native</div>
+            <div class="chip" data-stack="other">Other</div>
+          </div>
+          <div class="field-group" style="margin-top:14px">
+            <label class="field-label" for="g-pm">Package manager / build tool</label>
+            <input type="text" id="g-pm" placeholder="npm / pnpm / yarn / bun / pip / uv / poetry / cargo / go / maven / gradle">
+          </div>
+        </div>
+
+        <div class="card">
+          <p class="section-title">3. Commands</p>
+          <div class="row2col">
+            <div class="field-group"><label class="field-label" for="c-install">Install</label><input type="text" id="c-install" placeholder="npm install"></div>
+            <div class="field-group"><label class="field-label" for="c-build">Build</label><input type="text" id="c-build" placeholder="npm run build"></div>
+            <div class="field-group"><label class="field-label" for="c-test">Test (all)</label><input type="text" id="c-test" placeholder="npm test"></div>
+            <div class="field-group"><label class="field-label" for="c-testone">Test (single file)</label><input type="text" id="c-testone" placeholder="npm test -- path/to.test.ts"></div>
+            <div class="field-group"><label class="field-label" for="c-lint">Lint</label><input type="text" id="c-lint" placeholder="npm run lint"></div>
+            <div class="field-group"><label class="field-label" for="c-dev">Dev / run</label><input type="text" id="c-dev" placeholder="npm run dev"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <p class="section-title">4. Code style</p>
+          <div class="row2col">
+            <div class="field-group"><label class="field-label" for="s-indent">Indentation</label>
+              <select id="s-indent"><option value="">(unset)</option><option>2 spaces</option><option>4 spaces</option><option>tabs</option></select>
+            </div>
+            <div class="field-group"><label class="field-label" for="s-quotes">Quotes</label>
+              <select id="s-quotes"><option value="">(unset)</option><option>single</option><option>double</option></select>
+            </div>
+            <div class="field-group"><label class="field-label" for="s-semi">Semicolons</label>
+              <select id="s-semi"><option value="">(unset)</option><option>yes</option><option>no</option></select>
+            </div>
+            <div class="field-group"><label class="field-label" for="s-formatter">Formatter</label><input type="text" id="s-formatter" placeholder="prettier, black, gofmt..."></div>
+          </div>
+          <div class="checkline"><input type="checkbox" id="s-strict"><label for="s-strict">Strict types</label></div>
+        </div>
+
+        <div class="card">
+          <p class="section-title">5. Git</p>
+          <div class="row2col">
+            <div class="field-group"><label class="field-label" for="git-branch">Branch naming</label><input type="text" id="git-branch" placeholder="type/short-description"></div>
+            <div class="field-group"><label class="field-label" for="git-commit">Commit convention</label>
+              <select id="git-commit"><option value="">(unset)</option><option>Conventional Commits</option><option>Freeform, imperative subject line</option></select>
+            </div>
+          </div>
+          <div class="checkline"><input type="checkbox" id="git-nomain"><label for="git-nomain">Never commit to main</label></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="card">
+          <p class="section-title">6. Boundaries</p>
+          <div class="checkline"><input type="checkbox" id="b-generated"><label for="b-generated">Never edit generated files</label></div>
+          <input type="text" id="b-generated-glob" placeholder="glob, e.g. dist/**, *.gen.ts" style="margin:4px 0 10px 26px;width:calc(100% - 26px)">
+          <div class="checkline"><input type="checkbox" id="b-secrets" checked><label for="b-secrets">Never touch .env / secrets</label></div>
+          <div class="checkline"><input type="checkbox" id="b-migrations"><label for="b-migrations">Don't run migrations</label></div>
+          <div class="checkline"><input type="checkbox" id="b-deps"><label for="b-deps">Ask before adding dependencies</label></div>
+          <div class="checkline"><input type="checkbox" id="b-push"><label for="b-push">Don't push</label></div>
+          <label class="field-label" style="margin-top:10px" for="b-custom">Custom boundary (optional)</label>
+          <input type="text" id="b-custom" placeholder="Never modify files under legacy/">
+        </div>
+
+        <div class="card">
+          <p class="section-title">7. Monorepo</p>
+          <div class="checkline"><input type="checkbox" id="mono-yes"><label for="mono-yes">This is a monorepo</label></div>
+          <textarea id="mono-layout" placeholder="packages/api  - backend service&#10;packages/web  - frontend app&#10;packages/shared - shared types" style="min-height:70px;margin-top:6px"></textarea>
+        </div>
+
+        <div class="card">
+          <p class="section-title">8. Known pitfalls</p>
+          <label class="field-label" for="pitfalls">Anything the agent keeps getting wrong?</label>
+          <textarea id="pitfalls" placeholder="Forgets to run migrations before starting the dev server.&#10;Adds default exports even though we only use named exports." style="min-height:80px"></textarea>
+        </div>
+
+        <div class="card">
+          <div class="toolbar">
+            <button class="btn primary" id="genBtn" type="button">Generate</button>
+            <button class="btn" id="genCopyBtn" type="button">Copy</button>
+            <button class="btn" id="genDlClaude" type="button">Download CLAUDE.md</button>
+            <button class="btn" id="genDlAgents" type="button">Download AGENTS.md</button>
+          </div>
+          <div class="preview-pane" id="genPreview">Fill in the form and hit Generate — output appears here.</div>
+          <p class="hint">Tip: run it through the Lint tab — it should score A. Ours does.</p>
+        </div>
+        <div id="genCtaArea"></div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<div class="toss-modal" id="tossModal" hidden role="dialog" aria-modal="true" aria-labelledby="tossTitle">
+  <div class="toss-dialog">
+    <button class="toss-close" type="button" data-toss-close aria-label="닫기">×</button>
+    <h2 id="tossTitle">토스로 구매</h2>
+    <img src="toss-qr.png" alt="토스 송금 QR 코드">
+    <p>토스 앱으로 QR을 스캔해 ₩13,000을 보내주세요. 이체 후 <a href="mailto:nmasd128@gmail.com?subject=Pro%20Pack%20%EA%B5%AC%EB%A7%A4">nmasd128@gmail.com</a> 으로 입금자명을 보내주시면 24시간 내 Pro Pack 다운로드 링크를 보내드립니다.</p>
+    <p class="note">(자동 전달이 아닌 수동 전달입니다)</p>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap">
+    <p>Not affiliated with Anthropic or OpenAI. CLAUDE.md and AGENTS.md are file conventions of their respective tools.</p>
+    <p>No accounts, no tracking, no network requests. Everything above runs in your browser.</p>
+  </div>
+</footer>
+
+<script>
+(function(){
+"use strict";
+
+/* ============================================================
+   LINT ENGINE — pure function, no DOM access.
+   lint(text, tree) -> {score, grade, findings[], tokenEstimate, truncated}
+   ============================================================ */
+
+var MAX_ANALYZE_CHARS = 200 * 1024; // 200KB cap
+
+var CATEGORY_LABEL = {
+  bloat: "Bloat",
+  vagueness: "Vagueness",
+  missing: "Missing essentials",
+  hygiene: "Consistency & hygiene"
+};
+
+function extractCodeBlocks(text){
+  // returns array of {content, startLine, lineCount} for fenced ``` or ~~~ blocks
+  var lines = text.split("\n");
+  var blocks = [];
+  var fenceRe = /^\s*(```|~~~)/;
+  var i = 0;
+  while (i < lines.length){
+    var m = lines[i].match(fenceRe);
+    if (m){
+      var fence = m[1];
+      var start = i;
+      var content = [];
+      i++;
+      while (i < lines.length && !new RegExp("^\\s*" + fence).test(lines[i])){
+        content.push(lines[i]);
+        i++;
+      }
+      blocks.push({content: content.join("\n"), startLine: start + 1, lineCount: content.length});
+      i++; // skip closing fence
+    } else {
+      i++;
+    }
+  }
+  return blocks;
+}
+
+function stripCodeBlocks(text){
+  // returns text with fenced code block bodies removed (kept as blank), for "outside code blocks" checks
+  var lines = text.split("\n");
+  var fenceRe = /^\s*(```|~~~)/;
+  var out = [];
+  var i = 0;
+  while (i < lines.length){
+    var m = lines[i].match(fenceRe);
+    if (m){
+      var fence = m[1];
+      out.push(""); // fence line itself blanked
+      i++;
+      while (i < lines.length && !new RegExp("^\\s*" + fence).test(lines[i])){
+        out.push("");
+        i++;
+      }
+      if (i < lines.length){ out.push(""); i++; } // closing fence
+    } else {
+      out.push(lines[i]);
+      i++;
+    }
+  }
+  return out.join("\n");
+}
+
+function findLineNumbers(text, matcher){
+  // matcher: function(line)->bool. Returns [{no, text}]
+  var lines = text.split("\n");
+  var hits = [];
+  for (var i = 0; i < lines.length; i++){
+    if (matcher(lines[i])) hits.push({no: i + 1, text: lines[i].trim()});
+  }
+  return hits;
+}
+
+function clip(str, n){
+  n = n || 100;
+  if (str.length <= n) return str;
+  return str.slice(0, n - 1) + "…";
+}
+
+function lint(rawText, rawTree){
+  var text = rawText || "";
+  var tree = rawTree || "";
+  var truncated = false;
+  if (text.length > MAX_ANALYZE_CHARS){
+    text = text.slice(0, MAX_ANALYZE_CHARS);
+    truncated = true;
+  }
+
+  var findings = [];
+  var deductTotal = 0;
+
+  function push(f){
+    findings.push(f);
+    deductTotal += (f.deduct || 0);
+  }
+
+  if (text.trim() === ""){
+    return {
+      score: null, grade: null, findings: [], empty: true,
+      tokenEstimate: 0, truncated: false, lineCount: 0
+    };
+  }
+
+  var lines = text.split("\n");
+  var lineCount = lines.length;
+  var plain = stripCodeBlocks(text); // for "outside code blocks" checks
+  var codeBlocks = extractCodeBlocks(text);
+  var tokenEstimate = Math.round(text.length / 4);
+
+  /* ---------- Bloat ---------- */
+
+  if (lineCount >= 300){
+    push({
+      id: "too-long", severity: "error", category: "bloat", deduct: 20,
+      message: "Every line is loaded into every session's context. Cut to what changes model behavior.",
+      fix: "Trim to the rules that actually change behavior; move background info to docs the agent can open on demand.",
+      lines: [{no: lineCount, text: lineCount + " lines total"}]
+    });
+  } else if (lineCount >= 150){
+    push({
+      id: "too-long", severity: "warn", category: "bloat", deduct: 8,
+      message: "Every line is loaded into every session's context. Cut to what changes model behavior.",
+      fix: "Trim to the rules that actually change behavior; move background info to docs the agent can open on demand.",
+      lines: [{no: lineCount, text: lineCount + " lines total"}]
+    });
+  }
+
+  var giantBlocks = codeBlocks.filter(function(b){ return b.lineCount > 30; });
+  giantBlocks.forEach(function(b){
+    push({
+      id: "giant-code-block", severity: "warn", category: "bloat", deduct: 6,
+      message: "Move to a file and reference the path instead.",
+      fix: "A " + b.lineCount + "-line fenced code block starting at line " + b.startLine + " bloats every session. Reference the file path instead.",
+      lines: [{no: b.startLine, text: clip(b.content.split("\n")[0] || "", 80)}]
+    });
+  });
+
+  push({
+    id: "token-estimate", severity: "info", category: "bloat", deduct: 0,
+    message: "Estimated token cost: ~" + tokenEstimate + " tokens (chars/4). This file is loaded into EVERY session.",
+    fix: "Lower is better — every token here is a token not spent on your actual task.",
+    lines: []
+  });
+
+  /* ---------- Vagueness ---------- */
+
+  var vagueWords = ["properly", "correctly", "appropriately", "as needed", "carefully", "efficiently", "robustly", "gracefully"];
+  var vagueRe = new RegExp("\\b(" + vagueWords.join("|") + ")\\b", "i");
+  var vagueHits = findLineNumbers(plain, function(l){ return vagueRe.test(l); });
+  if (vagueHits.length){
+    push({
+      id: "vague-adverbs", severity: "warn", category: "vagueness",
+      deduct: Math.min(15, vagueHits.length * 3),
+      message: "State the concrete behavior instead — 'run X before Y', not 'handle properly'.",
+      fix: "Replace vague adverbs (properly, correctly, carefully...) with the exact action.",
+      lines: vagueHits.slice(0, 5)
+    });
+  }
+
+  var fillerWords = ["please", "make sure to", "remember to", "try to", "it is important to"];
+  var fillerRe = new RegExp("\\b(" + fillerWords.join("|") + ")\\b", "i");
+  var fillerHits = findLineNumbers(plain, function(l){ return fillerRe.test(l); });
+  if (fillerHits.length){
+    push({
+      id: "filler-politeness", severity: "info", category: "vagueness",
+      deduct: Math.min(6, fillerHits.length),
+      message: "Instructions, not requests. Delete the padding; keep the verb.",
+      fix: "Cut 'please', 'make sure to', 'remember to', 'try to' — just state the rule.",
+      lines: fillerHits.slice(0, 5)
+    });
+  }
+
+  var genericPatterns = [
+    /write clean code/i, /follow best practices/i, /use meaningful names/i,
+    /use descriptive names/i, /add comments where (necessary|appropriate)/i,
+    /handle errors?\b/i, /write readable code/i, /write maintainable code/i,
+    /keep functions small/i, /be consistent\b/i
+  ];
+  var genericHits = findLineNumbers(plain, function(l){
+    return genericPatterns.some(function(re){ return re.test(l); });
+  });
+  if (genericHits.length){
+    push({
+      id: "generic-advice", severity: "warn", category: "vagueness",
+      deduct: Math.min(20, genericHits.length * 4),
+      message: "The model already knows this. Generic advice wastes context and dilutes your real rules.",
+      fix: "Delete generic software-craft advice; keep only project-specific rules.",
+      lines: genericHits.slice(0, 5)
+    });
+  }
+
+  var capsMatches = plain.match(/\b(IMPORTANT|NEVER|ALWAYS|MUST)\b/g) || [];
+  if (capsMatches.length > 3){
+    var capsHits = findLineNumbers(plain, function(l){ return /\b(IMPORTANT|NEVER|ALWAYS|MUST)\b/.test(l); });
+    push({
+      id: "caps-spam", severity: "warn", category: "vagueness", deduct: 10,
+      message: "Emphasis inflation: when everything is IMPORTANT, nothing is. Reserve caps for the 1–2 rules that actually prevent disasters.",
+      fix: "Found " + capsMatches.length + " caps-emphasis words. Keep caps for only your most critical rule.",
+      lines: capsHits.slice(0, 5)
+    });
+  }
+
+  /* ---------- Missing essentials ---------- */
+
+  var codeBlockText = codeBlocks.map(function(b){ return b.content; }).join("\n");
+  var hasCommandLikeCode = /npm|pnpm|yarn|cargo|pytest|go |make|mvn|gradle|composer|wp|dotnet|flutter|dart|terraform|kubectl|helm|docker|bun|uv|pip|poetry|bin\/rails|rake|gradlew?|mvnw?|swift|xcodebuild|zig|deno/i.test(codeBlockText);
+  var hasCommandHeading = /^#{1,3}\s+.*\b(command|build|test|scripts?|develop)\b/im.test(text);
+  if (!hasCommandLikeCode && !hasCommandHeading){
+    push({
+      id: "no-commands", severity: "error", category: "missing", deduct: 25,
+      message: "Add a Commands section — exact commands to build, test, lint. This is the single highest-value content.",
+      fix: "Add a '## Commands' section with the literal install/build/test/lint commands.",
+      lines: []
+    });
+  }
+
+  var hasHeadings = /^#{1,6}\s+\S/m.test(text);
+  if (!hasHeadings){
+    push({
+      id: "no-structure", severity: "warn", category: "missing", deduct: 10,
+      message: "No markdown headings found — the file reads as an undifferentiated block.",
+      fix: "Break the file into sections (## Commands, ## Code style, ## Boundaries...).",
+      lines: []
+    });
+  }
+
+  var hasVerify = /\b(test|verify|verification|ci|continuous integration)\b/i.test(text);
+  if (!hasVerify){
+    push({
+      id: "no-verify", severity: "info", category: "missing", deduct: 3,
+      message: "Tell the agent how to prove its work is correct.",
+      fix: "Add a line describing how changes are verified (test command, CI check, manual QA step).",
+      lines: []
+    });
+  }
+
+  /* ---------- Consistency & hygiene ---------- */
+
+  var STOPWORDS = {"that":1,"this":1,"with":1,"from":1,"have":1,"when":1,"your":1,"they":1,"will":1,"should":1,"before":1,"after":1,"about":1,"into":1,"only":1,"file":1,"files":1,"code":1,"never":1,"always":1};
+  function significantWords(line){
+    return (line.toLowerCase().match(/[a-z]{4,}/g) || []).filter(function(w){ return !STOPWORDS[w]; });
+  }
+  function directiveVerb(line){
+    var match = line.toLowerCase().match(/\b(?:always|never|don't|do not)\s+([a-z]+)/);
+    return match ? match[1] : "";
+  }
+  var alwaysLines = findLineNumbers(plain, function(l){ return /\balways\b/i.test(l); });
+  var neverLines = findLineNumbers(plain, function(l){ return /\bnever\b|\bdon't\b|\bdo not\b/i.test(l); });
+  var contradictions = [];
+  alwaysLines.forEach(function(aLine){
+    var aWords = significantWords(aLine.text);
+    var aVerb = directiveVerb(aLine.text);
+    neverLines.forEach(function(nLine){
+      var nWords = significantWords(nLine.text);
+      var nVerb = directiveVerb(nLine.text);
+      var overlap = aWords.filter(function(w){ return nWords.indexOf(w) !== -1; });
+      if (aVerb && aVerb === nVerb && overlap.length){
+        contradictions.push({always: aLine, never: nLine, word: overlap[0]});
+      }
+    });
+  });
+  if (contradictions.length){
+    var c0 = contradictions[0];
+    push({
+      id: "contradiction-heuristic", severity: "warn", category: "hygiene",
+      deduct: Math.min(16, contradictions.length * 8),
+      message: "Contradictory instructions about '" + c0.word + "' — an 'always' line and a 'never/don't' line both mention it.",
+      fix: "Resolve the contradiction — keep one rule, delete the other.",
+      lines: [c0.always, c0.never]
+    });
+  }
+
+  var todoRe = /\bTODO\b|\bFIXME\b|\bXXX\b|<your |\[insert|\{\{/i;
+  var todoHits = findLineNumbers(text, function(l){ return todoRe.test(l); });
+  if (todoHits.length){
+    push({
+      id: "todo-placeholder", severity: "error", category: "hygiene",
+      deduct: Math.min(30, todoHits.length * 10),
+      message: "Unfinished placeholder left in the file — the agent will treat it as literal instruction, not a note to yourself.",
+      fix: "Fill in or delete TODO/FIXME/XXX/<your ...>/[insert ...]/{{...}} placeholders.",
+      lines: todoHits.slice(0, 5)
+    });
+  }
+
+  var secretRes = [
+    /sk-[A-Za-z0-9]{20,}/,
+    /AKIA[0-9A-Z]{16}/,
+    /ghp_[A-Za-z0-9]{30,}/,
+    /\b[A-Z0-9_]*(KEY|TOKEN|SECRET)[A-Z0-9_]*\s*[:=]\s*['"]?[A-Za-z0-9+/_=-]{32,}['"]?/i
+  ];
+  var secretHits = findLineNumbers(text, function(l){ return secretRes.some(function(re){ return re.test(l); }); });
+  if (secretHits.length){
+    push({
+      id: "secret-pattern", severity: "error", category: "hygiene",
+      deduct: Math.min(50, secretHits.length * 25),
+      message: "NEVER put secrets in CLAUDE.md — it's read into every session and often committed.",
+      fix: "Remove the key/token and rotate it immediately; reference an env var name instead.",
+      lines: secretHits.slice(0, 5)
+    });
+  }
+
+  if (tree.trim() !== ""){
+    var pathTokenRe = /`([^`]*(?:\/[^`]+|\.[A-Za-z0-9]{1,4}))`|\b((?:[A-Za-z0-9_.-]+\/)+[A-Za-z0-9_.-]+|[A-Za-z0-9_.-]+\.[A-Za-z0-9]{1,4})\b/g;
+    var deadPaths = [];
+    var seenPaths = {};
+    var m2;
+    while ((m2 = pathTokenRe.exec(plain)) !== null){
+      var p = (m2[1] || m2[2]).trim();
+      if (!p || seenPaths[p]) continue;
+      seenPaths[p] = true;
+      if (tree.indexOf(p) === -1){
+        deadPaths.push(p);
+      }
+    }
+    if (deadPaths.length){
+      var deadHits = deadPaths.slice(0, 5).map(function(p){ return {no: null, text: p}; });
+      push({
+        id: "dead-path", severity: "warn", category: "hygiene",
+        deduct: Math.min(20, deadPaths.length * 5),
+        message: "References a file that doesn't exist — stale docs actively mislead the agent.",
+        fix: "Update or remove references to paths not present in your repo tree.",
+        lines: deadHits
+      });
+    }
+  }
+
+  var fluffHits = findLineNumbers(plain, function(l){ return /\byou are (a|an)\b/i.test(l); });
+  if (fluffHits.length){
+    push({
+      id: "first-person-fluff", severity: "info", category: "hygiene",
+      deduct: Math.min(8, fluffHits.length * 2),
+      message: "Role-play preambles don't change coding behavior; project facts do.",
+      fix: "Delete 'You are an expert...' framing; replace with concrete project facts and rules.",
+      lines: fluffHits.slice(0, 5)
+    });
+  }
+
+  var score = Math.max(0, Math.round(100 - deductTotal));
+  var grade;
+  if (score >= 95) grade = "A+";
+  else if (score >= 90) grade = "A";
+  else if (score >= 80) grade = "B";
+  else if (score >= 70) grade = "C";
+  else if (score >= 60) grade = "D";
+  else grade = "F";
+
+  return {
+    score: score, grade: grade, findings: findings, empty: false,
+    tokenEstimate: tokenEstimate, truncated: truncated, lineCount: lineCount
+  };
+}
+
+/* ============================================================
+   GENERATOR — pure-ish function of form data -> markdown string
+   ============================================================ */
+
+function buildDoc(d){
+  var lines = [];
+  lines.push("# " + (d.name || "Project"));
+  if (d.desc) lines.push(d.desc);
+
+  // Commands
+  var cmdRows = [];
+  if (d.install) cmdRows.push(["Install", d.install]);
+  if (d.build) cmdRows.push(["Build", d.build]);
+  if (d.test) cmdRows.push(["Test (all)", d.test]);
+  if (d.testone) cmdRows.push(["Test (single file)", d.testone]);
+  if (d.lint) cmdRows.push(["Lint", d.lint]);
+  if (d.dev) cmdRows.push(["Dev / run", d.dev]);
+  if (cmdRows.length){
+    lines.push("");
+    lines.push("## Commands");
+    lines.push("```");
+    cmdRows.forEach(function(r){ lines.push(r[0] + ": " + r[1]); });
+    lines.push("```");
+  }
+
+  // Code style
+  var styleBullets = [];
+  if (d.indent) styleBullets.push("Indentation: " + d.indent + ".");
+  if (d.quotes) styleBullets.push("Quotes: " + d.quotes + ".");
+  if (d.semi) styleBullets.push("Semicolons: " + d.semi + ".");
+  if (d.formatter) styleBullets.push("Run " + d.formatter + " before committing.");
+  if (d.strict) styleBullets.push("Strict types required, no implicit any.");
+  if (styleBullets.length){
+    lines.push("");
+    lines.push("## Code style");
+    styleBullets.forEach(function(b){ lines.push("- " + b); });
+  }
+
+  // Git
+  var gitBullets = [];
+  if (d.branch) gitBullets.push("Branch names: `" + d.branch + "`.");
+  if (d.commitConv) gitBullets.push(d.commitConv === "Conventional Commits" ? "Use Conventional Commits (feat:, fix:, chore:...)." : "Commit messages: freeform, imperative subject line.");
+  if (d.noMain) gitBullets.push("Never commit directly to main.");
+  if (gitBullets.length){
+    lines.push("");
+    lines.push("## Git");
+    gitBullets.forEach(function(b){ lines.push("- " + b); });
+  }
+
+  // Boundaries
+  var boundaries = [];
+  if (d.boundGenerated) boundaries.push("Never edit generated files" + (d.boundGeneratedGlob ? " (`" + d.boundGeneratedGlob + "`)" : "") + ".");
+  if (d.boundSecrets) boundaries.push("Never read, edit, or print `.env` files or other secrets.");
+  if (d.boundMigrations) boundaries.push("Don't run database migrations.");
+  if (d.boundDeps) boundaries.push("Ask before adding a new dependency.");
+  if (d.boundPush) boundaries.push("Don't push to any remote.");
+  if (d.boundCustom) boundaries.push(d.boundCustom);
+  if (boundaries.length){
+    lines.push("");
+    lines.push("## Boundaries");
+    boundaries.forEach(function(b){ lines.push("- " + b); });
+  }
+
+  // Known pitfalls
+  if (d.pitfalls){
+    lines.push("");
+    lines.push("## Known pitfalls");
+    d.pitfalls.split("\n").map(function(l){ return l.trim(); }).filter(Boolean).forEach(function(l){
+      lines.push("- " + l);
+    });
+  }
+
+  // Layout (monorepo only)
+  if (d.monorepo && d.monoLayout){
+    lines.push("");
+    lines.push("## Layout");
+    lines.push("```");
+    d.monoLayout.split("\n").forEach(function(l){ if (l.trim()) lines.push(l); });
+    lines.push("```");
+  }
+
+  return lines.join("\n") + "\n";
+}
+
+/* ============================================================
+   Self-tests (only on #test)
+   ============================================================ */
+
+function runSelfTests(){
+  console.log("Running CLAUDE.md Doctor self-tests...");
+
+  // 1. Empty input
+  var r1 = lint("", "");
+  console.assert(r1.empty === true, "Test 1 FAILED: empty input should set empty:true");
+
+  // 2. Bad sample triggers many rules and scores low
+  var r2 = lint(BAD_EXAMPLE, "");
+  console.assert(r2.score < 60, "Test 2 FAILED: bad example should score < 60, got " + r2.score);
+  var ids2 = r2.findings.map(function(f){ return f.id; });
+  console.assert(ids2.indexOf("caps-spam") !== -1, "Test 2 FAILED: expected caps-spam");
+  console.assert(ids2.indexOf("secret-pattern") !== -1, "Test 2 FAILED: expected secret-pattern");
+  console.assert(ids2.indexOf("todo-placeholder") !== -1, "Test 2 FAILED: expected todo-placeholder");
+  console.assert(ids2.indexOf("generic-advice") !== -1, "Test 2 FAILED: expected generic-advice");
+
+  // 3. Secret pattern detection
+  var r3 = lint("API_KEY=sk-abcdefghijklmnopqrstuvwxyz123456", "");
+  var ids3 = r3.findings.map(function(f){ return f.id; });
+  console.assert(ids3.indexOf("secret-pattern") !== -1, "Test 3 FAILED: expected secret-pattern to fire on sk- key");
+
+  // 4. Generated doc scores >= 90 (A) on our own linter
+  var sample = buildDoc({
+    name: "acme-api", desc: "Internal billing API for Acme Corp.",
+    install: "npm install", build: "npm run build", test: "npm test",
+    testone: "npm test -- path/to.test.ts", lint: "npm run lint", dev: "npm run dev",
+    indent: "2 spaces", quotes: "single", semi: "yes", formatter: "prettier", strict: true,
+    branch: "type/short-description", commitConv: "Conventional Commits", noMain: true,
+    boundGenerated: true, boundGeneratedGlob: "dist/**", boundSecrets: true,
+    boundMigrations: true, boundDeps: true, boundPush: false,
+    boundCustom: "Never modify files under legacy/.",
+    pitfalls: "Forgets to run migrations before starting the dev server.\nAdds default exports even though we only use named exports.",
+    monorepo: false
+  });
+  var r4 = lint(sample, "");
+  console.assert(r4.score >= 90, "Test 4 FAILED: generated sample should score >= 90 (A), got " + r4.score + "\n" + JSON.stringify(r4.findings.map(function(f){return f.id+":"+f.deduct;})));
+
+  console.log("Self-tests complete.");
+}
+
+/* ============================================================
+   BAD EXAMPLE (Load example button)
+   ============================================================ */
+
+var BAD_EXAMPLE = [
+"You are an expert 10x senior software engineer with 20 years of experience.",
+"",
+"IMPORTANT: You MUST ALWAYS write clean code and follow best practices.",
+"IMPORTANT: NEVER write bad code. This is IMPORTANT.",
+"ALWAYS use meaningful names for variables and functions.",
+"MUST add comments where necessary.",
+"",
+"Please make sure to handle errors properly. Remember to try to write",
+"readable and maintainable code. It is important to be consistent.",
+"Try to keep functions small and handle things gracefully and efficiently.",
+"",
+"Always use the staging database for local dev.",
+"Never use the staging database, it's shared with QA.",
+"",
+"Our internal API key for the metrics service is:",
+"METRICS_KEY=sk-abc123def456ghi789jkl012mno345pqr678",
+"",
+"TODO: fill in the rest of this file later.",
+"Auth config is in <your auth config path here>.",
+"See [insert deployment doc link] for deploy steps.",
+"Also check {{SOME_PLACEHOLDER}} before shipping.",
+"",
+"We don't have a specific structure for this doc, just read it top to bottom.",
+"",
+"Here's the entire legacy migration script for context, just in case:",
+"```",
+"function migrate() {",
+"  // step 1",
+"  // step 2",
+"  // step 3",
+"  // step 4",
+"  // step 5",
+"  // step 6",
+"  // step 7",
+"  // step 8",
+"  // step 9",
+"  // step 10",
+"  // step 11",
+"  // step 12",
+"  // step 13",
+"  // step 14",
+"  // step 15",
+"  // step 16",
+"  // step 17",
+"  // step 18",
+"  // step 19",
+"  // step 20",
+"  // step 21",
+"  // step 22",
+"  // step 23",
+"  // step 24",
+"  // step 25",
+"  // step 26",
+"  // step 27",
+"  // step 28",
+"  // step 29",
+"  // step 30",
+"  // step 31",
+"  // step 32",
+"}",
+"```",
+"",
+"The file `src/legacy/old-router.js` handles routing (it was deleted last year).",
+""
+].join("\n");
+
+/* ============================================================
+   DOM wiring
+   ============================================================ */
+
+function $(sel, root){ return (root || document).querySelector(sel); }
+function $all(sel, root){ return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
+function guardMonetization(root){
+  $all('a[href*="{{"], [data-toss*="{{"]', root).forEach(function(el){ el.hidden = true; });
+  $all(".cta-card", root).forEach(function(card){
+    if (!$all(".cta-links a:not([hidden]), .cta-links button:not([hidden])", card).length) card.hidden = true;
+  });
+}
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, function(c){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+  });
+}
+
+var CTA_HTML =
+  '<div class="cta-card">' +
+    '<h3>Pro Pack</h3>' +
+    '<p>25 stack-specific CLAUDE.md templates, 12 production safety hooks, 10 subagent definitions, orchestration recipes. $10.</p>' +
+    '<div class="cta-links">' +
+      '<a class="btn-link" href="https://nmasd.gumroad.com/l/wrucd" target="_blank" rel="noopener">Get the Pro Pack → https://nmasd.gumroad.com/l/wrucd</a>' +
+      '<a class="btn-link" href="{{KOFI_URL}}" target="_blank" rel="noopener">Useful? Tip on Ko-fi</a>' +
+      '<button class="btn-link toss-buy" type="button" data-toss="yes">🇰🇷 토스로 구매 (₩13,000)</button>' +
+    '</div>' +
+  '</div>';
+
+function renderResults(result){
+  var area = $("#resultsArea");
+  if (result.empty){
+    area.innerHTML = '<div class="card"><div class="empty-state"><div class="big">📋</div>Paste a CLAUDE.md above (or click "Load example (bad)") and hit Diagnose.</div></div>';
+    return;
+  }
+
+  var counts = {error: 0, warn: 0, info: 0};
+  result.findings.forEach(function(f){ counts[f.severity] = (counts[f.severity] || 0) + 1; });
+  var gradeClass = "grade-" + result.grade.charAt(0);
+
+  var html = '<div class="card">';
+  if (result.truncated){
+    html += '<div class="notice">Input exceeds 200KB — analysis was run on the first 200KB only.</div>';
+  }
+  html += '<div class="score-badge">';
+  html += '<div class="grade-circle ' + gradeClass + '">' + result.grade + '</div>';
+  html += '<div class="score-meta">';
+  html += '<div class="num">' + result.score + ' / 100</div>';
+  html += '<div class="sub">' + result.lineCount + ' lines · ~' + result.tokenEstimate + ' tokens (chars/4) · loaded into every session</div>';
+  html += '</div>';
+  html += '<div class="pill-counts">';
+  if (counts.error) html += '<span class="pill err">' + counts.error + ' error' + (counts.error > 1 ? "s" : "") + '</span>';
+  if (counts.warn) html += '<span class="pill warn">' + counts.warn + ' warning' + (counts.warn > 1 ? "s" : "") + '</span>';
+  if (counts.info) html += '<span class="pill info">' + counts.info + ' info</span>';
+  html += '</div>';
+  html += '</div>';
+  html += '<div class="row"><button class="btn" id="copyReportBtn" type="button">Copy report</button></div>';
+  html += '</div>';
+
+  var byCategory = {};
+  result.findings.forEach(function(f){
+    (byCategory[f.category] = byCategory[f.category] || []).push(f);
+  });
+  var order = ["bloat", "vagueness", "missing", "hygiene"];
+  order.forEach(function(cat){
+    var items = byCategory[cat];
+    if (!items || !items.length) return;
+    html += '<div class="card category-block">';
+    html += '<p class="category-title">' + CATEGORY_LABEL[cat] + '</p>';
+    items.forEach(function(f){
+      html += '<div class="finding sev-' + f.severity + '">';
+      html += '<div class="finding-head"><span class="sev-tag sev-' + f.severity + '">' + f.severity + '</span>' + f.id + '</div>';
+      html += '<p>' + escapeHtml(f.message) + '</p>';
+      f.lines.forEach(function(l){
+        html += '<div class="quote">' + (l.no ? '<b>L' + l.no + ':</b> ' : '') + escapeHtml(clip(l.text, 140)) + '</div>';
+      });
+      html += '<p class="fix">Fix: ' + escapeHtml(f.fix) + '</p>';
+      html += '</div>';
+    });
+    html += '</div>';
+  });
+
+  html += CTA_HTML;
+
+  area.innerHTML = html;
+  guardMonetization(area);
+
+  $("#copyReportBtn").addEventListener("click", function(){
+    var top = result.findings.filter(function(f){ return f.severity === "error"; })[0] ||
+              result.findings.filter(function(f){ return f.severity === "warn"; })[0];
+    var report = "CLAUDE.md Doctor: Grade " + result.grade + " (" + result.score + "/100) — " +
+      counts.error + " error" + (counts.error !== 1 ? "s" : "") + ", " +
+      counts.warn + " warning" + (counts.warn !== 1 ? "s" : "") + "\n" +
+      (top ? "Top issue: " + top.message + "\n" : "") +
+      "https://https://ddolboghi.github.io/claudemd-doctor/";
+    copyToClipboard(report, $("#copyReportBtn"));
+  });
+}
+
+function copyToClipboard(text, btn){
+  function done(){
+    if (!btn) return;
+    var orig = btn.textContent;
+    btn.textContent = "Copied ✓";
+    btn.classList.add("copy-ok");
+    setTimeout(function(){ btn.textContent = orig; btn.classList.remove("copy-ok"); }, 1500);
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(done, function(){ fallbackCopy(text); done(); });
+  } else {
+    fallbackCopy(text);
+    done();
+  }
+}
+function fallbackCopy(text){
+  var ta = document.createElement("textarea");
+  ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand("copy"); } catch(e){}
+  document.body.removeChild(ta);
+}
+
+function downloadFile(filename, content){
+  var blob = new Blob([content], {type: "text/markdown"});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+}
+
+function initTabs(){
+  $all(".tab-btn").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      $all(".tab-btn").forEach(function(b){ b.classList.remove("active"); });
+      $all(".panel").forEach(function(p){ p.classList.remove("active"); });
+      btn.classList.add("active");
+      $("#panel-" + btn.getAttribute("data-tab")).classList.add("active");
+    });
+  });
+}
+
+function initTheme(){
+  var btn = $("#themeToggle");
+  var stored = null;
+  try { stored = localStorage.getItem("cmdDoctorTheme"); } catch(e){}
+  if (stored) document.documentElement.setAttribute("data-theme", stored);
+  btn.addEventListener("click", function(){
+    var current = document.documentElement.getAttribute("data-theme");
+    var isDark = current ? current === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+    var next = isDark ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    try { localStorage.setItem("cmdDoctorTheme", next); } catch(e){}
+  });
+}
+
+function initTossModal(){
+  var modal = $("#tossModal");
+  function close(){ modal.hidden = true; }
+  document.addEventListener("click", function(e){
+    if (e.target === modal || e.target.closest("[data-toss-close]")) close();
+    if (e.target.closest(".toss-buy")) modal.hidden = false;
+  });
+  document.addEventListener("keydown", function(e){ if (e.key === "Escape") close(); });
+}
+
+function initLintTab(){
+  $("#diagnoseBtn").addEventListener("click", function(){
+    var text = $("#mainInput").value;
+    var tree = $("#treeInput").value;
+    var result = lint(text, tree);
+    renderResults(result);
+  });
+  $("#loadExampleBtn").addEventListener("click", function(){
+    $("#mainInput").value = BAD_EXAMPLE;
+    renderResults(lint(BAD_EXAMPLE, $("#treeInput").value));
+  });
+  $("#clearBtn").addEventListener("click", function(){
+    $("#mainInput").value = "";
+    $("#treeInput").value = "";
+    $("#resultsArea").innerHTML = "";
+  });
+}
+
+function collectFormData(){
+  var stackEls = $all(".chip.selected", $("#stackChips"));
+  var stacks = stackEls.map(function(c){ return c.textContent; });
+  return {
+    name: $("#g-name").value.trim(),
+    desc: $("#g-desc").value.trim(),
+    stacks: stacks,
+    pm: $("#g-pm").value.trim(),
+    install: $("#c-install").value.trim(),
+    build: $("#c-build").value.trim(),
+    test: $("#c-test").value.trim(),
+    testone: $("#c-testone").value.trim(),
+    lint: $("#c-lint").value.trim(),
+    dev: $("#c-dev").value.trim(),
+    indent: $("#s-indent").value,
+    quotes: $("#s-quotes").value,
+    semi: $("#s-semi").value,
+    formatter: $("#s-formatter").value.trim(),
+    strict: $("#s-strict").checked,
+    branch: $("#git-branch").value.trim(),
+    commitConv: $("#git-commit").value,
+    noMain: $("#git-nomain").checked,
+    boundGenerated: $("#b-generated").checked,
+    boundGeneratedGlob: $("#b-generated-glob").value.trim(),
+    boundSecrets: $("#b-secrets").checked,
+    boundMigrations: $("#b-migrations").checked,
+    boundDeps: $("#b-deps").checked,
+    boundPush: $("#b-push").checked,
+    boundCustom: $("#b-custom").value.trim(),
+    pitfalls: $("#pitfalls").value.trim(),
+    monorepo: $("#mono-yes").checked,
+    monoLayout: $("#mono-layout").value.trim()
+  };
+}
+
+function initGenerateTab(){
+  $all(".chip", $("#stackChips")).forEach(function(chip){
+    chip.addEventListener("click", function(){ chip.classList.toggle("selected"); });
+  });
+
+  var lastDoc = "";
+
+  function generate(){
+    var d = collectFormData();
+    if (!d.name && !d.desc && !d.install && !d.build && !d.test){
+      $("#genPreview").textContent = "Fill in at least a project name and one command, then hit Generate.";
+      return "";
+    }
+    lastDoc = buildDoc(d);
+    $("#genPreview").textContent = lastDoc;
+    $("#genCtaArea").innerHTML = CTA_HTML;
+    guardMonetization($("#genCtaArea"));
+    return lastDoc;
+  }
+
+  $("#genBtn").addEventListener("click", generate);
+  $("#genCopyBtn").addEventListener("click", function(){
+    var doc = lastDoc || generate();
+    if (doc) copyToClipboard(doc, $("#genCopyBtn"));
+  });
+  $("#genDlClaude").addEventListener("click", function(){
+    var doc = lastDoc || generate();
+    if (doc) downloadFile("CLAUDE.md", doc);
+  });
+  $("#genDlAgents").addEventListener("click", function(){
+    var doc = lastDoc || generate();
+    if (doc) downloadFile("AGENTS.md", "<!-- Generated by CLAUDE.md Doctor. Identical content to CLAUDE.md, saved as AGENTS.md for tools that read this filename. -->\n\n" + doc);
+  });
+}
+
+function init(){
+  initTabs();
+  initTheme();
+  initTossModal();
+  initLintTab();
+  initGenerateTab();
+  guardMonetization(document);
+  if (location.hash === "#test"){
+    runSelfTests();
+  }
+}
+
+if (document.readyState === "loading"){
+  document.addEventListener("DOMContentLoaded", init);
+} else {
+  init();
+}
+
+// Expose for automated testing / #test console use
+window.__claudeMdDoctor = { lint: lint, buildDoc: buildDoc, BAD_EXAMPLE: BAD_EXAMPLE };
+
+})();
+</script>
+</body>
+</html>
