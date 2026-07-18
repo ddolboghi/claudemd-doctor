@@ -369,8 +369,8 @@ footer p{margin:4px 0}
     <button class="toss-close" type="button" data-toss-close aria-label="닫기">×</button>
     <h2 id="tossTitle">토스로 구매</h2>
     <img src="toss-qr.png" alt="토스 송금 QR 코드">
-    <p>토스 앱으로 QR을 스캔해 ₩13,000을 보내주세요. 이체 후 <a href="mailto:nmasd128@gmail.com?subject=Pro%20Pack%20%EA%B5%AC%EB%A7%A4">nmasd128@gmail.com</a> 으로 입금자명을 보내주시면 24시간 내 Pro Pack 다운로드 링크를 보내드립니다.</p>
-    <p class="note">(자동 전달이 아닌 수동 전달입니다)</p>
+    <p>토스 앱으로 QR을 스캔해 ₩13,000을 보내주세요. 이체 후 <a href="mailto:nmasd128@gmail.com?subject=Pro%20Pack%20%EA%B5%AC%EB%A7%A4">nmasd128@gmail.com</a> 으로 <strong>보내신 이메일 주소에서</strong> 입금자명을 알려주시면, 그 이메일로 Pro Pack .zip 파일(60개 파일)을 24시간 내에 첨부해 보내드립니다.</p>
+    <p class="note">개인이 직접 확인 후 보내는 <strong>수동 전달</strong>입니다(즉시 자동 다운로드가 아님). 문의·환불은 같은 주소로: 입금 후 파일을 못 받으셨거나 도움이 안 되면 환불해 드립니다.</p>
   </div>
 </div>
 
@@ -393,6 +393,7 @@ footer p{margin:4px 0}
 var MAX_ANALYZE_CHARS = 200 * 1024; // 200KB cap
 
 var CATEGORY_LABEL = {
+  substance: "Substance",
   bloat: "Bloat",
   vagueness: "Vagueness",
   missing: "Missing essentials",
@@ -409,10 +410,11 @@ function extractCodeBlocks(text){
     var m = lines[i].match(fenceRe);
     if (m){
       var fence = m[1];
+      var closingFenceRe = new RegExp("^\\s*" + fence);
       var start = i;
       var content = [];
       i++;
-      while (i < lines.length && !new RegExp("^\\s*" + fence).test(lines[i])){
+      while (i < lines.length && !closingFenceRe.test(lines[i])){
         content.push(lines[i]);
         i++;
       }
@@ -435,9 +437,10 @@ function stripCodeBlocks(text){
     var m = lines[i].match(fenceRe);
     if (m){
       var fence = m[1];
+      var closingFenceRe = new RegExp("^\\s*" + fence);
       out.push(""); // fence line itself blanked
       i++;
-      while (i < lines.length && !new RegExp("^\\s*" + fence).test(lines[i])){
+      while (i < lines.length && !closingFenceRe.test(lines[i])){
         out.push("");
         i++;
       }
@@ -455,6 +458,7 @@ function findLineNumbers(text, matcher){
   var lines = text.split("\n");
   var hits = [];
   for (var i = 0; i < lines.length; i++){
+    if (lines[i].trim() === "") continue;
     if (matcher(lines[i])) hits.push({no: i + 1, text: lines[i].trim()});
   }
   return hits;
@@ -467,7 +471,15 @@ function clip(str, n){
 }
 
 function lint(rawText, rawTree){
-  var text = rawText || "";
+  var fullText = rawText || "";
+  var secretRes = [
+    /sk-(?:proj-|svcacct-|ant-)?[A-Za-z0-9]{20,}/,
+    /AKIA[0-9A-Z]{16}/,
+    /(?:github_pat_[A-Za-z0-9]{22,}|gh(?:p|o|s|r)_[A-Za-z0-9]{30,})/,
+    /\b[A-Z0-9_]*(KEY|TOKEN|SECRET)[A-Z0-9_]*\s*[:=]\s*['"]?[A-Za-z0-9+/_=-]{32,}['"]?/i
+  ];
+  var todoRe = /\bTODO\b|\bFIXME\b|\bXXX\b|<your |\[insert|\{\{/i;
+  var text = fullText;
   var tree = rawTree || "";
   var truncated = false;
   if (text.length > MAX_ANALYZE_CHARS){
@@ -483,31 +495,199 @@ function lint(rawText, rawTree){
     deductTotal += (f.deduct || 0);
   }
 
-  if (text.trim() === ""){
+  if (fullText.trim() === ""){
     return {
       score: null, grade: null, findings: [], empty: true,
-      tokenEstimate: 0, truncated: false, lineCount: 0
+      tokenEstimate: 0, truncated: false, lineCount: 0,
+      utility: 0, signals: {cmd: false, paths: false, entity: false, verify: false}
     };
   }
+
+  var todoHits = findLineNumbers(fullText, function(l){ return todoRe.test(l); });
+  var secretHits = findLineNumbers(fullText, function(l){ return secretRes.some(function(re){ return re.test(l); }); });
 
   var lines = text.split("\n");
   var lineCount = lines.length;
   var plain = stripCodeBlocks(text); // for "outside code blocks" checks
   var codeBlocks = extractCodeBlocks(text);
   var tokenEstimate = Math.round(text.length / 4);
+  var pathSpanRe = /^(?:(?:\.\.?\/)?(?:[\w.-]+\/)+[\w.-]+|[\w.-]+\.[A-Za-z0-9]{1,8})$/;
+  var pathTokenRe = /(?:\.\.?\/)?(?:[\w.-]+\/)+[\w.-]+|[\w.-]+\.[A-Za-z0-9]{1,8}/g;
+  var commandNameRe = /^(?:\.\/)?(npm|pnpm|yarn|bun|npx|node|deno|python3?|pytest|uv|pip|poetry|cargo|go|make|mvnw?|gradlew?|dotnet|composer|bin\/rails|rake|terraform|kubectl|helm|docker|flutter|dart|swift|xcodebuild|zig|kustomize|turbo|unity|tflint|checkov)(?:\s+(.+))?$/i;
+  var treePaths = {};
+  function normalizePath(path){
+    return String(path).trim().replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+$/, "");
+  }
+  if (tree.trim() !== ""){
+    tree.split("\n").forEach(function(line){
+      var normalized = normalizePath(line);
+      if (normalized) treePaths[normalized.toLowerCase()] = true;
+    });
+  }
+  function isValidPath(path){
+    var normalized = normalizePath(path);
+    if (!normalized || /[\s<>{}\[\]]/.test(normalized) || !pathSpanRe.test(normalized)) return false;
+    return tree.trim() === "" || !!treePaths[normalized.toLowerCase()];
+  }
+  var subcommandAllow = {
+    npm: {install:1, i:1, ci:1, add:1, run:1, test:1, start:1, build:1, dev:1, lint:1, exec:1, x:1, publish:1, update:1, audit:1, create:1},
+    pnpm: {install:1, i:1, ci:1, add:1, run:1, test:1, start:1, build:1, dev:1, lint:1, exec:1, x:1, publish:1, update:1, audit:1, create:1},
+    yarn: {install:1, i:1, ci:1, add:1, run:1, test:1, start:1, build:1, dev:1, lint:1, exec:1, x:1, publish:1, update:1, audit:1, create:1},
+    bun: {install:1, i:1, ci:1, add:1, run:1, test:1, start:1, build:1, dev:1, lint:1, exec:1, x:1, publish:1, update:1, audit:1, create:1},
+    cargo: {build:1, test:1, run:1, check:1, clippy:1, fmt:1, add:1, bench:1, doc:1, install:1, nextest:1},
+    go: {build:1, test:1, run:1, vet:1, get:1, mod:1, install:1, generate:1},
+    pip: {install:1, add:1, sync:1, run:1, lock:1},
+    uv: {install:1, add:1, sync:1, run:1, lock:1},
+    poetry: {install:1, add:1, sync:1, run:1, lock:1}
+  };
+  function parseCommand(value){
+    var command = String(value).trim().replace(/^[$>]\s*/, "").trim();
+    var match = command.match(commandNameRe);
+    if (!match){
+      command = command.replace(/^[A-Za-z][^:]*:\s*/, "").trim();
+      match = command.match(commandNameRe);
+    }
+    if (!match) return null;
+    var executable = match[1].toLowerCase();
+    var args = (match[2] || "").trim();
+    if (!args && !/^(pytest|make)$/i.test(executable)) return null;
+    var tokens = args ? args.split(/\s+/) : [];
+    var optionTakesValue = {"--filter":1, "-F":1, "--workspace":1, "-w":1};
+    var subcommandIndex = 0;
+    while (subcommandIndex < tokens.length && /^-/.test(tokens[subcommandIndex])){
+      if (optionTakesValue[tokens[subcommandIndex]]) subcommandIndex++;
+      subcommandIndex++;
+    }
+    var subcommand = (tokens[subcommandIndex] || "").toLowerCase();
+    var subcommandBase = subcommand.split(":")[0];
+    if (subcommandAllow[executable] && !subcommandAllow[executable][subcommandBase]) return null;
+    var verify = /^(pytest)$/i.test(executable) || /^(test|lint|check|typecheck|build|validate|clippy)$/.test(subcommandBase);
+    if (/^(npm|pnpm|yarn|bun)$/.test(executable) && subcommandBase === "run"){
+      var scriptName = (tokens[subcommandIndex + 1] || "").toLowerCase();
+      verify = /^(test|lint|check|typecheck|build)(?::|$)/.test(scriptName);
+    }
+    if (executable === "unity") verify = tokens.some(function(token){ return /^-runtests$/i.test(token); });
+    return {canonical: command.replace(/\s+/g, " ").toLowerCase(), verify: verify};
+  }
+  function normalizeCommand(value){
+    var parsed = parseCommand(value);
+    return parsed ? parsed.canonical : "";
+  }
+  function backtickSpans(value){
+    var spans = [];
+    var re = /`([^`\n]+)`/g;
+    var match;
+    while ((match = re.exec(value)) !== null) spans.push(match[1]);
+    return spans;
+  }
+  var instructionVerbRe = /\b(run|runs|execute|build|test|install|use|uses|edit|edits|queue|queues|verify|check|confirm)\b/i;
+  var pathVerbRe = /\b(edit|edits|read|open|check|checks|update|updates|use|uses|reference|references)\b/i;
+  var entityVerbRe = /\b(use|uses|run|runs|queue|queues|process|processes|start|starts)\b/i;
+  var listItemRe = /^\s*(?:[-*+]\s+|\d+\.\s+)/;
+  function isContextualInstructionLine(line){
+    var spans = backtickSpans(line);
+    if (!spans.length) return false;
+    var prose = line.replace(/`[^`\n]+`/g, " ");
+    var proseWords = prose.match(/[A-Za-z][A-Za-z0-9_-]*/g) || [];
+    return instructionVerbRe.test(prose) || proseWords.length >= 4;
+  }
+  function lineHasVerb(line, re){
+    return re.test(line.replace(/`[^`\n]+`/g, " "));
+  }
+  var strongCommands = {};
+  var weakCommands = {};
+  var verificationCommands = {};
+  var paths = {};
+  var excludedEntities = {TODO:1, FIXME:1, IMPORTANT:1, NEVER:1, ALWAYS:1, MUST:1};
+  var entities = {};
+  function addInlineEvidence(line){
+    if (line.indexOf("`") === -1) return;
+    var isListItem = listItemRe.test(line);
+    var commandContext = isContextualInstructionLine(line);
+    var pathContext = isListItem || lineHasVerb(line, pathVerbRe);
+    var entityContext = lineHasVerb(line, entityVerbRe);
+    backtickSpans(line).forEach(function(value){
+      var parsed = parseCommand(value);
+      if (parsed){
+        if (isListItem) strongCommands[parsed.canonical] = true;
+        else if (commandContext) weakCommands[parsed.canonical] = true;
+        if (parsed.verify) verificationCommands[parsed.canonical] = true;
+      }
+      var normalized = normalizePath(value);
+      if (pathContext && isValidPath(normalized)) paths[normalized.toLowerCase()] = normalized;
+      var entity = value.trim();
+      var isEntity = /^[A-Z][A-Z0-9_]{2,}$/.test(entity) || /^[A-Z][A-Za-z0-9]*(Service|Worker|Queue|Job|Controller|Repository|Topic|Table)$/.test(entity);
+      if (entityContext && isEntity && !excludedEntities[entity] && !secretRes.some(function(re){ return re.test(entity); })) entities[entity.toLowerCase()] = true;
+    });
+  }
+  plain.split("\n").forEach(addInlineEvidence);
+  codeBlocks.forEach(function(block){
+    block.content.split("\n").forEach(function(line){
+      var parsed = parseCommand(line);
+      if (parsed){
+        strongCommands[parsed.canonical] = true;
+        if (parsed.verify) verificationCommands[parsed.canonical] = true;
+        var pathMatch;
+        pathTokenRe.lastIndex = 0;
+        while ((pathMatch = pathTokenRe.exec(line)) !== null){
+          var commandPath = normalizePath(pathMatch[0]);
+          if (isValidPath(commandPath)) paths[commandPath.toLowerCase()] = commandPath;
+        }
+      }
+    });
+  });
+  var strongCommandList = Object.keys(strongCommands);
+  var weakCommandList = Object.keys(weakCommands).filter(function(command){ return !strongCommands[command]; });
+  var commandList = strongCommandList.concat(weakCommandList);
+  var pathList = Object.keys(paths);
+  var entityList = Object.keys(entities);
+  var verifyInstructionRe = /\b(run|execute|verify|check|confirm)\b.*\b(test|tests|lint|typecheck|build|ci|manual qa)\b/i;
+  var negatedVerifyInstructionRe = /\b(?:never|don't|do not|no need to|skip)\b(?:\s+\w+){0,3}\s+(?:run|execute|verify|check|confirm)\b/i;
+  function isVerifyInstruction(line){
+    return verifyInstructionRe.test(line) &&
+      !negatedVerifyInstructionRe.test(line) &&
+      !/^\s*(?:run|execute|verify|check|confirm)\s+ci\s*[.!]?\s*$/i.test(line);
+  }
+  var hasVerify = Object.keys(verificationCommands).length > 0 ||
+    lines.some(isVerifyInstruction);
+  var projectRuleHits = findLineNumbers(plain, function(line){
+    if (!/^\s*(?:[-*+]\s+)?(?:always|never|must|don't|do not|run|use|edit|update|check|keep|avoid)\b/i.test(line)) return false;
+    return backtickSpans(line).some(function(value){
+      return !!normalizeCommand(value) || isValidPath(value) ||
+        Object.prototype.hasOwnProperty.call(entities, value.trim().toLowerCase());
+    });
+  });
+  var substanceNotes = [];
+  if (commandList.length) substanceNotes.push("real commands");
+  if (pathList.length) substanceNotes.push(pathList.length + (tree.trim() !== "" ? " confirmed real file path" : " real file path") + (pathList.length === 1 ? "" : "s"));
+  if (projectRuleHits.length) substanceNotes.push(projectRuleHits.length + " project-specific rule" + (projectRuleHits.length === 1 ? "" : "s"));
+  if (hasVerify) substanceNotes.push("verification guidance");
+  var substanceCount = substanceNotes.length;
+
+  var commandCredit = strongCommandList.length >= 2 ? 14 : (strongCommandList.length ? 12 : 0);
+  var pathCredit = pathList.length >= 2 ? 6 : (pathList.length ? 4 : 0);
+  var entityCredit = entityList.length >= 2 ? 4 : 0;
+  var verifyCredit = hasVerify ? 8 : 0;
+  var utility = Math.min(30, commandCredit + pathCredit + entityCredit + verifyCredit);
+  function lineHasConcreteEvidence(line){
+    return backtickSpans(line).some(function(value){
+      return (isContextualInstructionLine(line) && !!normalizeCommand(value)) ||
+        (lineHasVerb(line, pathVerbRe) && isValidPath(value));
+    });
+  }
 
   /* ---------- Bloat ---------- */
 
   if (lineCount >= 300){
     push({
-      id: "too-long", severity: "error", category: "bloat", deduct: 20,
+      id: "too-long", severity: "error", category: "bloat", deduct: 12,
       message: "Every line is loaded into every session's context. Cut to what changes model behavior.",
       fix: "Trim to the rules that actually change behavior; move background info to docs the agent can open on demand.",
       lines: [{no: lineCount, text: lineCount + " lines total"}]
     });
   } else if (lineCount >= 150){
     push({
-      id: "too-long", severity: "warn", category: "bloat", deduct: 8,
+      id: "too-long", severity: "warn", category: "bloat", deduct: 5,
       message: "Every line is loaded into every session's context. Cut to what changes model behavior.",
       fix: "Trim to the rules that actually change behavior; move background info to docs the agent can open on demand.",
       lines: [{no: lineCount, text: lineCount + " lines total"}]
@@ -515,9 +695,9 @@ function lint(rawText, rawTree){
   }
 
   var giantBlocks = codeBlocks.filter(function(b){ return b.lineCount > 30; });
-  giantBlocks.forEach(function(b){
+  giantBlocks.slice(0, 3).forEach(function(b){
     push({
-      id: "giant-code-block", severity: "warn", category: "bloat", deduct: 6,
+      id: "giant-code-block", severity: "warn", category: "bloat", deduct: 4,
       message: "Move to a file and reference the path instead.",
       fix: "A " + b.lineCount + "-line fenced code block starting at line " + b.startLine + " bloats every session. Reference the file path instead.",
       lines: [{no: b.startLine, text: clip(b.content.split("\n")[0] || "", 80)}]
@@ -535,11 +715,11 @@ function lint(rawText, rawTree){
 
   var vagueWords = ["properly", "correctly", "appropriately", "as needed", "carefully", "efficiently", "robustly", "gracefully"];
   var vagueRe = new RegExp("\\b(" + vagueWords.join("|") + ")\\b", "i");
-  var vagueHits = findLineNumbers(plain, function(l){ return vagueRe.test(l); });
+  var vagueHits = findLineNumbers(plain, function(l){ return vagueRe.test(l) && !lineHasConcreteEvidence(l); });
   if (vagueHits.length){
     push({
       id: "vague-adverbs", severity: "warn", category: "vagueness",
-      deduct: Math.min(15, vagueHits.length * 3),
+      deduct: Math.min(4, vagueHits.length),
       message: "State the concrete behavior instead — 'run X before Y', not 'handle properly'.",
       fix: "Replace vague adverbs (properly, correctly, carefully...) with the exact action.",
       lines: vagueHits.slice(0, 5)
@@ -552,7 +732,7 @@ function lint(rawText, rawTree){
   if (fillerHits.length){
     push({
       id: "filler-politeness", severity: "info", category: "vagueness",
-      deduct: Math.min(6, fillerHits.length),
+      deduct: Math.min(3, fillerHits.length),
       message: "Instructions, not requests. Delete the padding; keep the verb.",
       fix: "Cut 'please', 'make sure to', 'remember to', 'try to' — just state the rule.",
       lines: fillerHits.slice(0, 5)
@@ -566,12 +746,12 @@ function lint(rawText, rawTree){
     /keep functions small/i, /be consistent\b/i
   ];
   var genericHits = findLineNumbers(plain, function(l){
-    return genericPatterns.some(function(re){ return re.test(l); });
+    return genericPatterns.some(function(re){ return re.test(l); }) && !lineHasConcreteEvidence(l);
   });
   if (genericHits.length){
     push({
       id: "generic-advice", severity: "warn", category: "vagueness",
-      deduct: Math.min(20, genericHits.length * 4),
+      deduct: Math.min(8, genericHits.length * 2),
       message: "The model already knows this. Generic advice wastes context and dilutes your real rules.",
       fix: "Delete generic software-craft advice; keep only project-specific rules.",
       lines: genericHits.slice(0, 5)
@@ -582,7 +762,7 @@ function lint(rawText, rawTree){
   if (capsMatches.length > 3){
     var capsHits = findLineNumbers(plain, function(l){ return /\b(IMPORTANT|NEVER|ALWAYS|MUST)\b/.test(l); });
     push({
-      id: "caps-spam", severity: "warn", category: "vagueness", deduct: 10,
+      id: "caps-spam", severity: "warn", category: "vagueness", deduct: 4,
       message: "Emphasis inflation: when everything is IMPORTANT, nothing is. Reserve caps for the 1–2 rules that actually prevent disasters.",
       fix: "Found " + capsMatches.length + " caps-emphasis words. Keep caps for only your most critical rule.",
       lines: capsHits.slice(0, 5)
@@ -591,32 +771,29 @@ function lint(rawText, rawTree){
 
   /* ---------- Missing essentials ---------- */
 
-  var codeBlockText = codeBlocks.map(function(b){ return b.content; }).join("\n");
-  var hasCommandLikeCode = /npm|pnpm|yarn|cargo|pytest|go |make|mvn|gradle|composer|wp|dotnet|flutter|dart|terraform|kubectl|helm|docker|bun|uv|pip|poetry|bin\/rails|rake|gradlew?|mvnw?|swift|xcodebuild|zig|deno/i.test(codeBlockText);
-  var hasCommandHeading = /^#{1,3}\s+.*\b(command|build|test|scripts?|develop)\b/im.test(text);
-  if (!hasCommandLikeCode && !hasCommandHeading){
+  if (!commandList.length){
     push({
-      id: "no-commands", severity: "error", category: "missing", deduct: 25,
+      id: "no-commands", severity: "warn", category: "missing", deduct: 12,
       message: "Add a Commands section — exact commands to build, test, lint. This is the single highest-value content.",
       fix: "Add a '## Commands' section with the literal install/build/test/lint commands.",
       lines: []
     });
   }
 
-  var hasHeadings = /^#{1,6}\s+\S/m.test(text);
-  if (!hasHeadings){
+  var hasHeadings = /^#{1,6}\s+\S/m.test(plain);
+  var listItemCount = (plain.match(/^[ \t]*(?:[-*+]\s+|\d+\.\s+)/gm) || []).length;
+  if (!hasHeadings && listItemCount < 2){
     push({
-      id: "no-structure", severity: "warn", category: "missing", deduct: 10,
+      id: "no-structure", severity: "warn", category: "missing", deduct: 4,
       message: "No markdown headings found — the file reads as an undifferentiated block.",
       fix: "Break the file into sections (## Commands, ## Code style, ## Boundaries...).",
       lines: []
     });
   }
 
-  var hasVerify = /\b(test|verify|verification|ci|continuous integration)\b/i.test(text);
   if (!hasVerify){
     push({
-      id: "no-verify", severity: "info", category: "missing", deduct: 3,
+      id: "no-verify", severity: "info", category: "missing", deduct: 5,
       message: "Tell the agent how to prove its work is correct.",
       fix: "Add a line describing how changes are verified (test command, CI check, manual QA step).",
       lines: []
@@ -643,7 +820,10 @@ function lint(rawText, rawTree){
       var nWords = significantWords(nLine.text);
       var nVerb = directiveVerb(nLine.text);
       var overlap = aWords.filter(function(w){ return nWords.indexOf(w) !== -1; });
-      if (aVerb && aVerb === nVerb && overlap.length){
+      var aConcrete = backtickSpans(aLine.text).filter(function(value){ return isValidPath(value) || Object.prototype.hasOwnProperty.call(entities, value.trim().toLowerCase()); });
+      var nConcrete = backtickSpans(nLine.text).filter(function(value){ return isValidPath(value) || Object.prototype.hasOwnProperty.call(entities, value.trim().toLowerCase()); });
+      var sharedConcrete = aConcrete.filter(function(value){ return nConcrete.indexOf(value) !== -1; });
+      if (aVerb && aVerb === nVerb && (overlap.length >= 2 || sharedConcrete.length)){
         contradictions.push({always: aLine, never: nLine, word: overlap[0]});
       }
     });
@@ -652,36 +832,27 @@ function lint(rawText, rawTree){
     var c0 = contradictions[0];
     push({
       id: "contradiction-heuristic", severity: "warn", category: "hygiene",
-      deduct: Math.min(16, contradictions.length * 8),
+      deduct: Math.min(12, contradictions.length * 6),
       message: "Contradictory instructions about '" + c0.word + "' — an 'always' line and a 'never/don't' line both mention it.",
       fix: "Resolve the contradiction — keep one rule, delete the other.",
       lines: [c0.always, c0.never]
     });
   }
 
-  var todoRe = /\bTODO\b|\bFIXME\b|\bXXX\b|<your |\[insert|\{\{/i;
-  var todoHits = findLineNumbers(text, function(l){ return todoRe.test(l); });
   if (todoHits.length){
     push({
       id: "todo-placeholder", severity: "error", category: "hygiene",
-      deduct: Math.min(30, todoHits.length * 10),
+      deduct: 50,
       message: "Unfinished placeholder left in the file — the agent will treat it as literal instruction, not a note to yourself.",
       fix: "Fill in or delete TODO/FIXME/XXX/<your ...>/[insert ...]/{{...}} placeholders.",
       lines: todoHits.slice(0, 5)
     });
   }
 
-  var secretRes = [
-    /sk-[A-Za-z0-9]{20,}/,
-    /AKIA[0-9A-Z]{16}/,
-    /ghp_[A-Za-z0-9]{30,}/,
-    /\b[A-Z0-9_]*(KEY|TOKEN|SECRET)[A-Z0-9_]*\s*[:=]\s*['"]?[A-Za-z0-9+/_=-]{32,}['"]?/i
-  ];
-  var secretHits = findLineNumbers(text, function(l){ return secretRes.some(function(re){ return re.test(l); }); });
   if (secretHits.length){
     push({
       id: "secret-pattern", severity: "error", category: "hygiene",
-      deduct: Math.min(50, secretHits.length * 25),
+      deduct: 50,
       message: "NEVER put secrets in CLAUDE.md — it's read into every session and often committed.",
       fix: "Remove the key/token and rotate it immediately; reference an env var name instead.",
       lines: secretHits.slice(0, 5)
@@ -689,15 +860,16 @@ function lint(rawText, rawTree){
   }
 
   if (tree.trim() !== ""){
-    var pathTokenRe = /`([^`]*(?:\/[^`]+|\.[A-Za-z0-9]{1,4}))`|\b((?:[A-Za-z0-9_.-]+\/)+[A-Za-z0-9_.-]+|[A-Za-z0-9_.-]+\.[A-Za-z0-9]{1,4})\b/g;
+    var pathTokenRe = /`([^`]*(?:\/[^`]+|\.[A-Za-z0-9]{1,8}))`|\b((?:[A-Za-z0-9_.-]+\/)+[A-Za-z0-9_.-]+|[A-Za-z0-9_.-]+\.[A-Za-z0-9]{1,8})\b/g;
     var deadPaths = [];
     var seenPaths = {};
     var m2;
     while ((m2 = pathTokenRe.exec(plain)) !== null){
-      var p = (m2[1] || m2[2]).trim();
-      if (!p || seenPaths[p]) continue;
-      seenPaths[p] = true;
-      if (tree.indexOf(p) === -1){
+      var p = normalizePath(m2[1] || m2[2]);
+      var pathKey = p.toLowerCase();
+      if (!p || !pathSpanRe.test(p) || seenPaths[pathKey]) continue;
+      seenPaths[pathKey] = true;
+      if (!treePaths[pathKey]){
         deadPaths.push(p);
       }
     }
@@ -705,7 +877,7 @@ function lint(rawText, rawTree){
       var deadHits = deadPaths.slice(0, 5).map(function(p){ return {no: null, text: p}; });
       push({
         id: "dead-path", severity: "warn", category: "hygiene",
-        deduct: Math.min(20, deadPaths.length * 5),
+        deduct: Math.min(12, deadPaths.length * 4),
         message: "References a file that doesn't exist — stale docs actively mislead the agent.",
         fix: "Update or remove references to paths not present in your repo tree.",
         lines: deadHits
@@ -717,14 +889,30 @@ function lint(rawText, rawTree){
   if (fluffHits.length){
     push({
       id: "first-person-fluff", severity: "info", category: "hygiene",
-      deduct: Math.min(8, fluffHits.length * 2),
+      deduct: Math.min(3, fluffHits.length),
       message: "Role-play preambles don't change coding behavior; project facts do.",
       fix: "Delete 'You are an expert...' framing; replace with concrete project facts and rules.",
       lines: fluffHits.slice(0, 5)
     });
   }
 
-  var score = Math.max(0, Math.round(100 - deductTotal));
+  var styleRuleIds = {"vague-adverbs":1, "filler-politeness":1, "caps-spam":1, "first-person-fluff":1};
+  var styleDeduct = findings.reduce(function(total, finding){
+    return total + (styleRuleIds[finding.id] ? (finding.deduct || 0) : 0);
+  }, 0);
+  if (substanceCount >= 2 && styleDeduct > 5) deductTotal -= (styleDeduct - 5);
+
+  if (substanceCount){
+    push({
+      id: "substance-detected", severity: "info", category: "substance", deduct: 0,
+      message: "Substance detected: " + substanceNotes.join(", ") + ".",
+      fix: "Keep concrete commands, project references, rules, and verification guidance.",
+      lines: projectRuleHits.slice(0, 3)
+    });
+  }
+
+  var score = Math.max(0, Math.min(100, Math.round(70 + utility - deductTotal)));
+  if (!pathList.length && !entityList.length) score = Math.min(score, 89);
   var grade;
   if (score >= 95) grade = "A+";
   else if (score >= 90) grade = "A";
@@ -735,7 +923,8 @@ function lint(rawText, rawTree){
 
   return {
     score: score, grade: grade, findings: findings, empty: false,
-    tokenEstimate: tokenEstimate, truncated: truncated, lineCount: lineCount
+    tokenEstimate: tokenEstimate, truncated: truncated, lineCount: lineCount,
+    utility: utility, signals: {cmd: commandList.length > 0, paths: pathList.length > 0, entity: entityList.length >= 2, verify: hasVerify}
   };
 }
 
@@ -836,7 +1025,7 @@ function runSelfTests(){
 
   // 2. Bad sample triggers many rules and scores low
   var r2 = lint(BAD_EXAMPLE, "");
-  console.assert(r2.score < 60, "Test 2 FAILED: bad example should score < 60, got " + r2.score);
+  console.assert(r2.score === 0 && r2.grade === "F", "Test 2 FAILED: bad example should score 0/F, got " + r2.score + "/" + r2.grade);
   var ids2 = r2.findings.map(function(f){ return f.id; });
   console.assert(ids2.indexOf("caps-spam") !== -1, "Test 2 FAILED: expected caps-spam");
   console.assert(ids2.indexOf("secret-pattern") !== -1, "Test 2 FAILED: expected secret-pattern");
@@ -847,6 +1036,30 @@ function runSelfTests(){
   var r3 = lint("API_KEY=sk-abcdefghijklmnopqrstuvwxyz123456", "");
   var ids3 = r3.findings.map(function(f){ return f.id; });
   console.assert(ids3.indexOf("secret-pattern") !== -1, "Test 3 FAILED: expected secret-pattern to fire on sk- key");
+
+  // 3b. Modern secret formats remain hard defects.
+  var modernSecretSamples = [
+    "API_KEY=sk-proj-abc123def456ghi789jkl012mno",
+    "API_KEY=sk-svcacct-abc123def456ghi789jkl012mno",
+    "ANTHROPIC_KEY=sk-ant-abc123def456ghi789jkl012mno",
+    "GITHUB_TOKEN=github_pat_abc123def456ghi789jkl",
+    "GITHUB_TOKEN=gho_abcdefghijklmnopqrstuvwxyz123456",
+    "GITHUB_TOKEN=ghs_abcdefghijklmnopqrstuvwxyz123456",
+    "GITHUB_TOKEN=ghr_abcdefghijklmnopqrstuvwxyz123456"
+  ];
+  console.assert(modernSecretSamples.every(function(value){
+    return lint(value, "").findings.some(function(f){ return f.id === "secret-pattern"; });
+  }), "Test 3b FAILED: expected modern secret formats to fire secret-pattern");
+
+  // 3c. Negated verification instructions do not earn verification credit.
+  console.assert([
+    "Never run tests.",
+    "don't run the test suite",
+    "Do not run lint.",
+    "No need to run the build.",
+    "Skip running tests."
+  ].every(function(value){ return !lint(value, "").signals.verify; }),
+    "Test 3c FAILED: negated verification instructions must not set verify credit");
 
   // 4. Generated doc scores >= 90 (A) on our own linter
   var sample = buildDoc({
@@ -863,6 +1076,61 @@ function runSelfTests(){
   });
   var r4 = lint(sample, "");
   console.assert(r4.score >= 90, "Test 4 FAILED: generated sample should score >= 90 (A), got " + r4.score + "\n" + JSON.stringify(r4.findings.map(function(f){return f.id+":"+f.deduct;})));
+
+  // 5. Casual, useful instructions earn concrete-signal utility.
+  var casualUseful = "# Acme billing worker\n\nruns `BillingWorker`; queue `PAYMENTS_QUEUE`\n- `npm test` before merging\nretries edit `src/payments/retry.ts`, settings `config/queues.yml`\nHandle errors properly and keep functions small.";
+  var r5 = lint(casualUseful, "");
+  console.assert(r5.grade === "A+" && r5.utility === 30, "Test 5 FAILED: casual useful sample should score A+ with utility 30, got " + r5.score + "/" + r5.grade + " utility=" + r5.utility);
+
+  // 6. A Commands heading without a literal command remains boilerplate.
+  var boilerplate = "## Commands\n\nWrite clean code and follow best practices.\nHandle errors properly.";
+  var r6 = lint(boilerplate, "");
+  console.assert(r6.grade === "F" && r6.findings.some(function(f){ return f.id === "no-commands"; }), "Test 6 FAILED: command-heading boilerplate should be F with no-commands");
+
+  // 7. A secret remains an F even when the rest is useful.
+  var secretUseful = "# Billing\n\nUse `BillingWorker` with `PAYMENTS_QUEUE`. Run `npm test` before merging. Check `src/payments/retry.ts` and `config/queues.yml`.\nAPI_KEY=sk-abcdefghijklmnopqrstuvwxyz123456";
+  var r7 = lint(secretUseful, "");
+  console.assert(r7.grade === "F" && r7.score < 60, "Test 7 FAILED: secret useful sample should be F below 60, got " + r7.score + "/" + r7.grade);
+
+  // 8. Bare backtick tokens cannot farm utility credit.
+  var gamePayload = "# x\n`npm x` `a.x` `b.x` `ABC` `DEF`\nrun ci";
+  var r8 = lint(gamePayload, "");
+  console.assert(r8.score < 90, "Test 8 FAILED: bare-token payload should score below 90, got " + r8.score);
+
+  // 9. Colons inside command arguments are not mistaken for labels.
+  var r9a = lint("Run `npm run test:unit` before merging.", "");
+  var r9b = lint("Run `pnpm lint:fix` before merging.", "");
+  console.assert(r9a.signals.cmd && r9b.signals.cmd, "Test 9 FAILED: colon commands should be detected");
+
+  // 10. A TODO remains a hard defect even with otherwise useful content.
+  var todoUseful = "# Billing\n\nRun `npm test`; edit `src/payments/retry.ts` and `config/queues.yml`; use `BillingWorker` and `PAYMENTS_QUEUE`.\nTODO: later";
+  var r10 = lint(todoUseful, "");
+  console.assert(r10.grade === "F", "Test 10 FAILED: TODO payload should be F, got " + r10.score + "/" + r10.grade);
+
+  // 11. Markdown command lists are strong command evidence.
+  var r11 = lint("# Commands\n- `npm test`", "");
+  console.assert(r11.score >= 80, "Test 11 FAILED: list command should score at least 80, got " + r11.score);
+
+  // 12. A command verb cannot validate unrelated spans on the same line.
+  var r12 = lint("# x\nrun `npm x` `a.b` `C_D`\nrun ci", "");
+  console.assert(r12.score < 90, "Test 12 FAILED: mixed junk payload should score below 90, got " + r12.score);
+
+  // 13. Unknown package-manager subcommands do not count as commands.
+  var r13 = lint("# x\n- `npm banana test`", "");
+  console.assert(r13.score < 90, "Test 13 FAILED: unknown npm subcommand should score below 90, got " + r13.score);
+
+  // 14. Only canonical verification commands earn verification credit.
+  var r14 = lint("```\nnpm run lint:banana\nlint:potato\n```", "");
+  console.assert(r14.score < 90, "Test 14 FAILED: lint-script payload should score below 90, got " + r14.score);
+
+  // 15. Commands and verification alone cannot reach A.
+  var r15 = lint("```\nnpm run lint:banana\n```", "");
+  var r15b = lint("# x\n- `npm test`\n- `npm run build`", "");
+  console.assert(r15.score < 90 && r15b.score < 90, "Test 15 FAILED: command-only payloads should score below 90");
+
+  // 16. Independent path evidence permits useful instructions to reach A.
+  var r16 = lint("# Commands\n- `npm test`\nEdit `src/payments/retry.ts` before merging.", "");
+  console.assert(r16.score >= 90, "Test 16 FAILED: useful path-bearing sample should score at least 90, got " + r16.score);
 
   console.log("Self-tests complete.");
 }
@@ -961,7 +1229,7 @@ var CTA_HTML =
     '<h3>Pro Pack</h3>' +
     '<p>25 stack-specific CLAUDE.md templates, 12 production safety hooks, 10 subagent definitions, orchestration recipes. $10.</p>' +
     '<div class="cta-links">' +
-      '<a class="btn-link" href="https://nmasd.gumroad.com/l/wrucd" target="_blank" rel="noopener">Get the Pro Pack — $10 →</a>' +
+      '<a class="btn-link" href="{{GUMROAD_URL}}" target="_blank" rel="noopener">Get the Pro Pack — $10 →</a>' +
       '<button class="btn-link toss-buy" type="button" data-toss="yes">🇰🇷 토스로 구매 (₩13,000)</button>' +
     '</div>' +
   '</div>';
@@ -1000,7 +1268,7 @@ function renderResults(result){
   result.findings.forEach(function(f){
     (byCategory[f.category] = byCategory[f.category] || []).push(f);
   });
-  var order = ["bloat", "vagueness", "missing", "hygiene"];
+  var order = ["substance", "bloat", "vagueness", "missing", "hygiene"];
   order.forEach(function(cat){
     var items = byCategory[cat];
     if (!items || !items.length) return;
